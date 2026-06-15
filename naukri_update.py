@@ -67,18 +67,40 @@ time.sleep(10)
 print(f"After login URL: {driver.current_url}")
 
 driver.get("https://www.naukri.com/mnjuser/profile")
-time.sleep(5)
+time.sleep(8)
 print(f"Profile URL: {driver.current_url}")
+print(f"Profile title: {driver.title}")
 
+# Scroll down to find resume section
+driver.execute_script("window.scrollTo(0, 500)")
+time.sleep(2)
+
+# Try multiple ways to find file input
 file_inputs = driver.find_elements(By.XPATH, "//input[@type='file']")
 print(f"Found {len(file_inputs)} file inputs")
 
+if not file_inputs:
+    # Try clicking the update resume button first
+    try:
+        update_btn = driver.find_element(By.XPATH, "//span[contains(text(),'Update resume')] | //a[contains(text(),'Update')] | //button[contains(text(),'Update')]")
+        update_btn.click()
+        print("Clicked update resume button!")
+        time.sleep(3)
+        file_inputs = driver.find_elements(By.XPATH, "//input[@type='file']")
+        print(f"After click: Found {len(file_inputs)} file inputs")
+    except Exception as e:
+        print(f"Update button not found: {e}")
+
 if file_inputs:
+    driver.execute_script("arguments[0].style.display = 'block';", file_inputs[0])
     file_inputs[0].send_keys(tmp.name)
     time.sleep(5)
-    print("Resume uploaded!")
+    print("✅ Resume uploaded!")
 else:
-    print("No file input found")
+    print("❌ No file input found — saving page source for debug")
+    with open("/tmp/profile_page.html", "w") as f:
+        f.write(driver.page_source)
+    print("Page source saved")
 
 driver.quit()
-print("Done!")
+print("✅ Done!")
