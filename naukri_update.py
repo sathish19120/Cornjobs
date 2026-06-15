@@ -1,14 +1,12 @@
 print("SCRIPT STARTED")
-import sys, os, time, requests, tempfile
+import sys, os, time, requests, tempfile, json
 print(f"Python: {sys.version}")
 
 EMAIL = os.environ.get("NAUKRI_EMAIL")
 PASSWORD = os.environ.get("NAUKRI_PASSWORD")
 RESUME_URL = os.environ.get("RESUME_URL")
 
-print(f"EMAIL set: {bool(EMAIL)}")
-
-# Step 1: Download resume
+# Download resume
 print("Downloading resume...")
 r = requests.get(RESUME_URL)
 print(f"Download status: {r.status_code}")
@@ -17,71 +15,74 @@ tmp.write(r.content)
 tmp.close()
 print(f"Resume saved: {tmp.name}")
 
-# Step 2: Login via Naukri API
+# Login via session
 session = requests.Session()
-
-headers = {
+session.headers.update({
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer": "https://www.naukri.com/nlogin/login",
+    "Origin": "https://www.naukri.com",
+    "appid": "109",
+    "systemid": "jobseeker",
     "Content-Type": "application/json",
+})
+
+print("Logging in...")
+login_resp = session.post(
+    "https://www.naukri.com/central-login-services/v1/login",
+    json={"username": EMAIL, "password": PASSWORD, "type": "login"},
+)
+print(f"Login status: {login_resp.status_code}")
+print(f"Login response: {login_resp.text[:1000]}")
+
+data = login_resp.json()
+
+# Try to find token anywhere in response
+token = None
+nauthtoken = None
+
+if "data" in data:
+    d = data["data"]
+    token = d.get("authToken") or d.get("jwtToken") or d.get("token")
+    nauthtoken = d.get("nauthtoken") or d.get("nAuthToken")
+    print(f"User ID: {d.get('userId') or d.get('id')}")
+
+print(f"Token: {bool(token)}")
+print(f"NAuthToken: {bool(nauthtoken)}")
+print(f"Cookies: {dict(session.cookies)}")
+
+if not token and not nauthtoken:
+    print("No token found — trying cookie-based upload")
+
+# Upload resume using cookies from login
+print("Uploading resume...")
+upload_headers = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
     "Accept": "application/json",
     "appid": "109",
-    "systemid": "109",
+    "systemid": "jobseeker",
+    "Referer": "https://www.naukri.com/mnjuser/profile",
 }
 
-print("Logging in via API...")
-login_payload = {
-    "username": EMAIL,
-    "password": PASSWORD,
-    "type": "login"
-}
+if token:
+    upload_headers["Authorization"] = f"Bearer {token}"
+if nauthtoken:
+    upload_headers["nauthtoken"] = nauthtoken
 
-login_response = session.post(
-    "https://www.naukri.com/central-login-services/v1/login",
-    json=login_payload,
-    headers=headers
-)
+with open(tmp.name, "rb") as f:
+    upload_resp = session.post(
+        "https://www.naukri.com/profile-services/v1/user/uploadResume",
+        files={"file": ("resume.pdf", f, "application/pdf")},
+        headers=upload_headers
+    )
 
-print(f"Login status: {login_response.status_code}")
-print(f"Login response: {login_response.text[:500]}")
+print(f"Upload status: {upload_resp.status_code}")
+print(f"Upload response: {upload_resp.text[:500]}")
 
-if login_response.status_code == 200:
-    login_data = login_response.json()
-    print(f"Login data keys: {list(login_data.keys())}")
-
-    # Extract auth token
-    token = None
-    if "data" in login_data:
-        token = login_data["data"].get("authToken") or login_data["data"].get("jwtToken")
-    print(f"Token found: {bool(token)}")
-
-    if token:
-        # Step 3: Upload resume
-        print("Uploading resume...")
-        upload_headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Authorization": f"Bearer {token}",
-            "appid": "109",
-            "systemid": "109",
-        }
-
-        with open(tmp.name, "rb") as f:
-            files = {"file": ("resume.pdf", f, "application/pdf")}
-            upload_response = session.post(
-                "https://www.naukri.com/profile-services/v1/user/uploadResume",
-                files=files,
-                headers=upload_headers
-            )
-
-        print(f"Upload status: {upload_response.status_code}")
-        print(f"Upload response: {upload_response.text[:300]}")
-
-        if upload_response.status_code == 200:
-            print("✅ Resume uploaded successfully!")
-        else:
-            print("❌ Upload failed")
-    else:
-        print("❌ No token in login response")
+if upload_resp.status_code == 200:
+    print("✅ Resume uploaded successfully!")
 else:
-    print("❌ Login API failed")
+    print("❌ Upload failed - check response above")
 
-print("✅ Script completed!")
+print("✅ Done!")
