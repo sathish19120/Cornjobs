@@ -1,97 +1,87 @@
 print("SCRIPT STARTED")
 import sys, os, time, requests, tempfile
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from webdriver_manager.chrome import ChromeDriverManager
+print(f"Python: {sys.version}")
 
 EMAIL = os.environ.get("NAUKRI_EMAIL")
 PASSWORD = os.environ.get("NAUKRI_PASSWORD")
 RESUME_URL = os.environ.get("RESUME_URL")
 
+print(f"EMAIL set: {bool(EMAIL)}")
+
+# Step 1: Download resume
 print("Downloading resume...")
 r = requests.get(RESUME_URL)
 print(f"Download status: {r.status_code}")
 tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
 tmp.write(r.content)
 tmp.close()
+print(f"Resume saved: {tmp.name}")
 
-options = Options()
-options.add_argument("--headless=new")
-options.add_argument("--no-sandbox")
-options.add_argument("--disable-dev-shm-usage")
-options.add_argument("--window-size=1920,1080")
-options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-options.add_experimental_option("excludeSwitches", ["enable-automation"])
-options.add_experimental_option("useAutomationExtension", False)
+# Step 2: Login via Naukri API
+session = requests.Session()
 
-service = Service(ChromeDriverManager().install())
-driver = webdriver.Chrome(service=service, options=options)
-driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-wait = WebDriverWait(driver, 25)
+headers = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Content-Type": "application/json",
+    "Accept": "application/json",
+    "appid": "109",
+    "systemid": "109",
+}
 
-print("Opening Naukri login...")
-driver.get("https://www.naukri.com/nlogin/login")
-time.sleep(10)
+print("Logging in via API...")
+login_payload = {
+    "username": EMAIL,
+    "password": PASSWORD,
+    "type": "login"
+}
 
-# Enter email
-email_field = wait.until(EC.element_to_be_clickable((By.ID, "usernameField")))
-email_field.clear()
-email_field.send_keys(EMAIL)
-print("Email entered!")
-time.sleep(2)
+login_response = session.post(
+    "https://www.naukri.com/central-login-services/v1/login",
+    json=login_payload,
+    headers=headers
+)
 
-# Enter password
-password_field = wait.until(EC.element_to_be_clickable((By.ID, "passwordField")))
-password_field.clear()
-password_field.send_keys(PASSWORD)
-print("Password entered!")
-time.sleep(2)
+print(f"Login status: {login_response.status_code}")
+print(f"Login response: {login_response.text[:500]}")
 
-# Click login using JavaScript
-login_btn = wait.until(EC.presence_of_element_located((By.XPATH, "//button[@type='submit']")))
-driver.execute_script("arguments[0].click();", login_btn)
-print("Login clicked via JS!")
-time.sleep(10)
+if login_response.status_code == 200:
+    login_data = login_response.json()
+    print(f"Login data keys: {list(login_data.keys())}")
 
-print(f"After login URL: {driver.current_url}")
+    # Extract auth token
+    token = None
+    if "data" in login_data:
+        token = login_data["data"].get("authToken") or login_data["data"].get("jwtToken")
+    print(f"Token found: {bool(token)}")
 
-# Check if login succeeded
-if "nlogin" in driver.current_url:
-    print("❌ Still on login page - trying alternative login...")
-    # Try direct JS login
-    driver.execute_script(f"""
-        document.getElementById('usernameField').value = '{EMAIL}';
-        document.getElementById('passwordField').value = '{PASSWORD}';
-    """)
-    time.sleep(1)
-    driver.execute_script("document.querySelector('button[type=submit]').click();")
-    time.sleep(10)
-    print(f"After retry URL: {driver.current_url}")
+    if token:
+        # Step 3: Upload resume
+        print("Uploading resume...")
+        upload_headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Authorization": f"Bearer {token}",
+            "appid": "109",
+            "systemid": "109",
+        }
 
-print("Going to profile page...")
-driver.get("https://www.naukri.com/mnjuser/profile")
-time.sleep(8)
-print(f"Profile URL: {driver.current_url}")
-print(f"Profile title: {driver.title}")
+        with open(tmp.name, "rb") as f:
+            files = {"file": ("resume.pdf", f, "application/pdf")}
+            upload_response = session.post(
+                "https://www.naukri.com/profile-services/v1/user/uploadResume",
+                files=files,
+                headers=upload_headers
+            )
 
-# Scroll down
-driver.execute_script("window.scrollTo(0, 800)")
-time.sleep(2)
+        print(f"Upload status: {upload_response.status_code}")
+        print(f"Upload response: {upload_response.text[:300]}")
 
-file_inputs = driver.find_elements(By.XPATH, "//input[@type='file']")
-print(f"Found {len(file_inputs)} file inputs")
-
-if file_inputs:
-    driver.execute_script("arguments[0].style.display = 'block';", file_inputs[0])
-    file_inputs[0].send_keys(tmp.name)
-    time.sleep(5)
-    print("✅ Resume uploaded!")
+        if upload_response.status_code == 200:
+            print("✅ Resume uploaded successfully!")
+        else:
+            print("❌ Upload failed")
+    else:
+        print("❌ No token in login response")
 else:
-    print("❌ Login failed - not authenticated")
+    print("❌ Login API failed")
 
-driver.quit()
 print("✅ Script completed!")
