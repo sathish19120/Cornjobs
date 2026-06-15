@@ -40,45 +40,16 @@ def update_naukri(resume_path):
 
     print("Opening Naukri login page...")
     driver.get("https://www.naukri.com/nlogin/login")
-    time.sleep(5)
+    time.sleep(8)
     print(f"Page title: {driver.title}")
-    print(f"Page URL: {driver.current_url}")
 
     print("Finding email field...")
-    try:
-        email_field = wait.until(EC.presence_of_element_located((By.XPATH, "//input[@type='text' or @type='email']")))
-        email_field.clear()
-        email_field.send_keys(EMAIL)
-        print("Email entered!")
-    except Exception as e:
-        print(f"Email field error: {e}")
-        driver.save_screenshot("/tmp/login_error.png")
-        raise
+    # Wait for visible and interactable email field
+    email_field = wait.until(EC.element_to_be_clickable((By.XPATH, "//input[@placeholder='Enter your active Email ID / Username']")))
+    email_field.click()
+    time.sleep(1)
+    email_field.send_keys(EMAIL)
+    print("Email entered!")
 
     print("Finding password field...")
-    password_field = driver.find_element(By.XPATH, "//input[@type='password']")
-    password_field.clear()
-    password_field.send_keys(PASSWORD)
-    print("Password entered!")
-
-    print("Clicking login button...")
-    login_btn = driver.find_element(By.XPATH, "//button[@type='submit']")
-    login_btn.click()
-    time.sleep(5)
-    print(f"After login URL: {driver.current_url}")
-    print("Logged in!")
-
-    print("Going to profile page...")
-    driver.get("https://www.naukri.com/mnjuser/profile")
-    time.sleep(5)
-
-    print("Uploading resume...")
-    upload = wait.until(EC.presence_of_element_located((By.XPATH, "//input[@type='file']")))
-    upload.send_keys(resume_path)
-    time.sleep(5)
-
-    print("✅ Naukri profile updated!")
-    driver.quit()
-
-resume = download_resume()
-update_naukri(resume)
+    password_field = wait.until(EC.element_to_be_clickable((By.XPATH, "//input[@placeholder='Enter your password']")))
