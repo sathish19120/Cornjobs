@@ -76,11 +76,10 @@ try:
             break
 
     buttons = driver.find_elements(By.TAG_NAME, "button")
-    for btn in buttons:
-        if btn.is_displayed() and btn.get_attribute('type') == 'submit':
-            btn.click()
-            print("Login clicked!")
-            break
+    login_btn = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(@class,'login-btn') or contains(text(),'Login') or @type='submit']")))
+        login_btn.click()
+        print("Login clicked!")
+        time.sleep(10)
 
     time.sleep(8)
     print(f"After login URL: {driver.current_url}")
